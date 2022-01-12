@@ -44,16 +44,19 @@ type EasyEnergyTarief struct {
 	// levernacier
 	SpotPrijsGasM3             float64 `json:spotprijsgasm3`
 	SpotPrijsGasTerugM3        float64 `json:spotprijsgasterugm3`
-	OpslagEasyEnergyPrijsGasM3 float64 `json:opslageasyenergyprijsgaskwh`
+	OpslagEasyEnergyPrijsGasM3 float64 `json:opslageasyenergyprijsgas`
 
 	// overheid
-	OpslagRegioPrijsGasM3      float64 `json:opslagregioprijsgaskwh`
-	EnergieBelastingGasM3      float64 `json:energiebelasgingsgaskwh`
-	OpslagDuurzameEnergieGasM3 float64 `json:opslagduurzameenergiesgaskwh`
+	OpslagRegioPrijsGasM3      float64 `json:opslagregioprijsgas`
+	EnergieBelastingGasM3      float64 `json:energiebelasgingsgas`
+	OpslagDuurzameEnergieGasM3 float64 `json:opslagduurzameenergiesgas`
 	BtwGas                     float64 `json:btwgas`
 
 	TotalPrijsStroomKwh float64 `json:totalprijsstroomkwh`
 	TotalPrijsGasM3     float64 `json:totalprijsgasm3`
+
+	BtwPrijsStroomKwh float64 `json:btwprijsstroomkwh`
+	BtwPrijsGasM3     float64 `json:btwprijsgasm3`
 }
 
 /*type EasyEnergySpot struct {
@@ -200,6 +203,9 @@ func (e *EasyEnergyTarief) GetData() {
 
 	e.TotalPrijsGasM3 = (e.SpotPrijsGasM3 + e.OpslagEasyEnergyPrijsGasM3 + e.OpslagDuurzameEnergieGasM3 + e.EnergieBelastingGasM3 + e.OpslagRegioPrijsGasM3) * (1 + (e.BtwGas / 100))
 	e.TotalPrijsStroomKwh = (e.SpotPrijsStroomKwh + e.OpslagEasyEnergyPrijsStroomKwh + e.OpslagDuurzameEnergieStroomKwh + e.EnergieBelastingStroomKwh + e.VergroeningPrijsStroomKwh) * (1 + (e.BtwStroom / 100))
+
+	e.BtwPrijsGasM3 = (e.SpotPrijsGasM3 + e.OpslagEasyEnergyPrijsGasM3 + e.OpslagDuurzameEnergieGasM3 + e.EnergieBelastingGasM3 + e.OpslagRegioPrijsGasM3) * (e.BtwGas / 100)
+	e.BtwPrijsStroomKwh = (e.SpotPrijsStroomKwh + e.OpslagEasyEnergyPrijsStroomKwh + e.OpslagDuurzameEnergieStroomKwh + e.EnergieBelastingStroomKwh + e.VergroeningPrijsStroomKwh) * (e.BtwStroom / 100)
 }
 
 func (h *Handler) get() error {
@@ -245,16 +251,16 @@ func (h *Handler) put() {
 	log.Printf("sending value easyenergy.spotprijsgasm3=%f", h.easyEnergy.Tarief.SpotPrijsGasM3)
 	h.statsd.Gauge(1.0, "easyenergy.spotprijsgasterugm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsGasTerugM3))
 	log.Printf("sending value easyenergy.spotprijsgasterugm3=%f", h.easyEnergy.Tarief.SpotPrijsGasTerugM3)
-	h.statsd.Gauge(1.0, "easyenergy.opslageasyenergyprijsgaskwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3))
-	log.Printf("sending value easyenergy.opslageasyenergyprijsgaskwh=%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3)
+	h.statsd.Gauge(1.0, "easyenergy.opslageasyenergyprijsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3))
+	log.Printf("sending value easyenergy.opslageasyenergyprijsgas=%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3)
 
 	// overheid
-	h.statsd.Gauge(1.0, "easyenergy.opslagregioprijsgaskwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3))
-	log.Printf("sending value easyenergy.opslagregioprijsgaskwh=%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3)
-	h.statsd.Gauge(1.0, "easyenergy.energiebelasgingsgaskwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.EnergieBelastingGasM3))
-	log.Printf("sending value easyenergy.energiebelasgingsgaskwh=%f", h.easyEnergy.Tarief.EnergieBelastingGasM3)
-	h.statsd.Gauge(1.0, "easyenergy.opslagduurzameenergiesgaskwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3))
-	log.Printf("sending value easyenergy.opslagduurzameenergiesgaskwh=%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3)
+	h.statsd.Gauge(1.0, "easyenergy.opslagregioprijsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3))
+	log.Printf("sending value easyenergy.opslagregioprijsgas=%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3)
+	h.statsd.Gauge(1.0, "easyenergy.energiebelasgingsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.EnergieBelastingGasM3))
+	log.Printf("sending value easyenergy.energiebelasgingsgas=%f", h.easyEnergy.Tarief.EnergieBelastingGasM3)
+	h.statsd.Gauge(1.0, "easyenergy.opslagduurzameenergiesgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3))
+	log.Printf("sending value easyenergy.opslagduurzameenergiesgas=%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3)
 	h.statsd.Gauge(1.0, "easyenergy.btwgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwGas))
 	log.Printf("sending value easyenergy.btwgas=%f", h.easyEnergy.Tarief.BtwGas)
 
@@ -262,6 +268,11 @@ func (h *Handler) put() {
 	log.Printf("sending value easyenergy.totalprijsstroomkwh=%f", h.easyEnergy.Tarief.TotalPrijsStroomKwh)
 	h.statsd.Gauge(1.0, "easyenergy.totalprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.TotalPrijsGasM3))
 	log.Printf("sending value easyenergy.totalprijsgasm3=%f", h.easyEnergy.Tarief.TotalPrijsGasM3)
+
+	h.statsd.Gauge(1.0, "easyenergy.btwprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwPrijsStroomKwh))
+	log.Printf("sending value easyenergy.btwprijsstroomkwh=%f", h.easyEnergy.Tarief.BtwPrijsStroomKwh)
+	h.statsd.Gauge(1.0, "easyenergy.btwprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwPrijsGasM3))
+	log.Printf("sending value easyenergy.btwprijsgasm3=%f", h.easyEnergy.Tarief.BtwPrijsGasM3)
 
 }
 
