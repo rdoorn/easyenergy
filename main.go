@@ -15,11 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rdoorn/gohelper/statsdhelper"
+	"github.com/rdoorn/gohelper/influxdbhelper"
 )
 
 type Handler struct {
-	statsd     *statsdhelper.Handler
+	influxdb *influxdbhelper.Handler
+	//statsd     *statsdhelper.Handler
 	easyEnergy *EasyEnergy
 	last       time.Time
 }
@@ -85,15 +86,20 @@ func getJson(url string, target interface{}) error {
 func (e *EasyEnergyTarief) GetSpot(s string) (error, float64, float64) {
 	items := []EasyEnergySpotItem{}
 
-	err := getJson(fmt.Sprintf("https://mijn.easyenergy.com/nl/api/tariff/get%stariffs?startTimestamp=2022-01-11T23:00:00.000Z&endTimestamp=2022-01-12T23:00:00.000Z&grouping=", s), &items)
+	startData := time.Now().Format("2006-01-02T15:00:00.000Z")
+	endData := time.Now().Add(1 * time.Hour).Format("2006-01-02T15:00:00.000Z")
+
+	url := fmt.Sprintf("https://mijn.easyenergy.com/nl/api/tariff/get%stariffs?startTimestamp=%s&endTimestamp=%s&grouping=", s, startData, endData)
+	log.Printf("requesting url: %s", url)
+	err := getJson(url, &items)
 	if err != nil {
 		return err, 0, 0
 	}
 
 	for _, i := range items {
-		if i.TimeStamp.Before(time.Now()) && i.TimeStamp.Add(1*time.Hour).After(time.Now()) {
-			return nil, i.TariffUsage, i.TariffReturn
-		}
+		//if i.TimeStamp.Before(time.Now()) && i.TimeStamp.Add(1*time.Hour).After(time.Now()) {
+		return nil, i.TariffUsage, i.TariffReturn
+		//}
 	}
 
 	log.Printf("spot data returned: %+v", items)
@@ -103,6 +109,7 @@ func (e *EasyEnergyTarief) GetSpot(s string) (error, float64, float64) {
 // GetMisc get misc values
 func (e *EasyEnergyTarief) GetMisc() error {
 
+	log.Printf("Getting Misc numbers")
 	myClient := &http.Client{Timeout: 10 * time.Second}
 
 	r, err := myClient.Get("https://www.easyenergy.com/nl/energietarieven")
@@ -201,11 +208,12 @@ func (e *EasyEnergyTarief) GetData() {
 		e.SpotPrijsStroomTerugKwh = terug
 	}
 
-	e.TotalPrijsGasM3 = (e.SpotPrijsGasM3 + e.OpslagEasyEnergyPrijsGasM3 + e.OpslagDuurzameEnergieGasM3 + e.EnergieBelastingGasM3 + e.OpslagRegioPrijsGasM3) * (1 + (e.BtwGas / 100))
-	e.TotalPrijsStroomKwh = (e.SpotPrijsStroomKwh + e.OpslagEasyEnergyPrijsStroomKwh + e.OpslagDuurzameEnergieStroomKwh + e.EnergieBelastingStroomKwh + e.VergroeningPrijsStroomKwh) * (1 + (e.BtwStroom / 100))
-
 	e.BtwPrijsGasM3 = (e.SpotPrijsGasM3 + e.OpslagEasyEnergyPrijsGasM3 + e.OpslagDuurzameEnergieGasM3 + e.EnergieBelastingGasM3 + e.OpslagRegioPrijsGasM3) * (e.BtwGas / 100)
 	e.BtwPrijsStroomKwh = (e.SpotPrijsStroomKwh + e.OpslagEasyEnergyPrijsStroomKwh + e.OpslagDuurzameEnergieStroomKwh + e.EnergieBelastingStroomKwh + e.VergroeningPrijsStroomKwh) * (e.BtwStroom / 100)
+
+	e.TotalPrijsGasM3 = (e.SpotPrijsGasM3 + e.OpslagEasyEnergyPrijsGasM3 + e.OpslagDuurzameEnergieGasM3 + e.EnergieBelastingGasM3 + e.OpslagRegioPrijsGasM3 + e.BtwPrijsGasM3)
+	e.TotalPrijsStroomKwh = (e.SpotPrijsStroomKwh + e.OpslagEasyEnergyPrijsStroomKwh + e.OpslagDuurzameEnergieStroomKwh + e.EnergieBelastingStroomKwh + e.VergroeningPrijsStroomKwh + e.BtwPrijsStroomKwh)
+	log.Printf("all data updated")
 }
 
 func (h *Handler) get() error {
@@ -228,58 +236,96 @@ func (h *Handler) put() {
 	h.easyEnergy.m.Lock()
 	defer h.easyEnergy.m.Unlock()
 
-	h.statsd.Gauge(1.0, "easyenergy.spotprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsStroomKwh))
-	log.Printf("sending value easyenergy.spotprijsstroomkwh=%f", h.easyEnergy.Tarief.SpotPrijsStroomKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.spotprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsStroomKwh))
+	//log.Printf("sending value easyenergy.spotprijsstroomkwh=%f", h.easyEnergy.Tarief.SpotPrijsStroomKwh)
 
-	h.statsd.Gauge(1.0, "easyenergy.spotprijsstroomterugkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsStroomTerugKwh))
-	log.Printf("sending value easyenergy.spotprijsstroomterugkwh=%f", h.easyEnergy.Tarief.SpotPrijsStroomTerugKwh)
-	h.statsd.Gauge(1.0, "easyenergy.opslageasyenergyprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsStroomKwh))
-	log.Printf("sending value easyenergy.opslageasyenergyprijsstroomkwh=%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsStroomKwh)
-	h.statsd.Gauge(1.0, "easyenergy.vergroeningprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.VergroeningPrijsStroomKwh))
-	log.Printf("sending value easyenergy.vergroeningprijsstroomkwh=%f", h.easyEnergy.Tarief.VergroeningPrijsStroomKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.spotprijsstroomterugkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsStroomTerugKwh))
+	//log.Printf("sending value easyenergy.spotprijsstroomterugkwh=%f", h.easyEnergy.Tarief.SpotPrijsStroomTerugKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.opslageasyenergyprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsStroomKwh))
+	//log.Printf("sending value easyenergy.opslageasyenergyprijsstroomkwh=%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsStroomKwh)
+	//h.statsd.Gauge(2.0, "easyenergy.vergroeningprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.VergroeningPrijsStroomKwh))
+	//log.Printf("sending value easyenergy.vergroeningprijsstroomkwh=%f", h.easyEnergy.Tarief.VergroeningPrijsStroomKwh)
 
 	// overheid
-	h.statsd.Gauge(1.0, "easyenergy.energiebelasgingstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.EnergieBelastingStroomKwh))
-	log.Printf("sending value easyenergy.energiebelasgingstroomkwh=%f", h.easyEnergy.Tarief.EnergieBelastingStroomKwh)
-	h.statsd.Gauge(1.0, "easyenergy.opslagduurzameenergiestroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieStroomKwh))
-	log.Printf("sending value easyenergy.opslagduurzameenergiestroomkwh=%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieStroomKwh)
-	h.statsd.Gauge(1.0, "easyenergy.btwstroom", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwStroom))
-	log.Printf("sending value easyenergy.btwstroom=%f", h.easyEnergy.Tarief.BtwStroom)
+	//h.statsd.Gauge(1.0, "easyenergy.energiebelasgingstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.EnergieBelastingStroomKwh))
+	//log.Printf("sending value easyenergy.energiebelasgingstroomkwh=%f", h.easyEnergy.Tarief.EnergieBelastingStroomKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.opslagduurzameenergiestroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieStroomKwh))
+	//log.Printf("sending value easyenergy.opslagduurzameenergiestroomkwh=%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieStroomKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.btwstroom", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwStroom))
+	//log.Printf("sending value easyenergy.btwstroom=%f", h.easyEnergy.Tarief.BtwStroom)
 
 	// levernacier
-	h.statsd.Gauge(1.0, "easyenergy.spotprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsGasM3))
-	log.Printf("sending value easyenergy.spotprijsgasm3=%f", h.easyEnergy.Tarief.SpotPrijsGasM3)
-	h.statsd.Gauge(1.0, "easyenergy.spotprijsgasterugm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsGasTerugM3))
-	log.Printf("sending value easyenergy.spotprijsgasterugm3=%f", h.easyEnergy.Tarief.SpotPrijsGasTerugM3)
-	h.statsd.Gauge(1.0, "easyenergy.opslageasyenergyprijsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3))
-	log.Printf("sending value easyenergy.opslageasyenergyprijsgas=%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.spotprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsGasM3))
+	//log.Printf("sending value easyenergy.spotprijsgasm3=%f", h.easyEnergy.Tarief.SpotPrijsGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.spotprijsgasterugm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.SpotPrijsGasTerugM3))
+	//log.Printf("sending value easyenergy.spotprijsgasterugm3=%f", h.easyEnergy.Tarief.SpotPrijsGasTerugM3)
+	//h.statsd.Gauge(1.0, "easyenergy.opslageasyenergyprijsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3))
+	//log.Printf("sending value easyenergy.opslageasyenergyprijsgas=%f", h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3)
 
 	// overheid
-	h.statsd.Gauge(1.0, "easyenergy.opslagregioprijsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3))
-	log.Printf("sending value easyenergy.opslagregioprijsgas=%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3)
-	h.statsd.Gauge(1.0, "easyenergy.energiebelasgingsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.EnergieBelastingGasM3))
-	log.Printf("sending value easyenergy.energiebelasgingsgas=%f", h.easyEnergy.Tarief.EnergieBelastingGasM3)
-	h.statsd.Gauge(1.0, "easyenergy.opslagduurzameenergiesgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3))
-	log.Printf("sending value easyenergy.opslagduurzameenergiesgas=%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3)
-	h.statsd.Gauge(1.0, "easyenergy.btwgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwGas))
-	log.Printf("sending value easyenergy.btwgas=%f", h.easyEnergy.Tarief.BtwGas)
+	//h.statsd.Gauge(1.0, "easyenergy.opslagregioprijsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3))
+	//log.Printf("sending value easyenergy.opslagregioprijsgas=%f", h.easyEnergy.Tarief.OpslagRegioPrijsGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.energiebelasgingsgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.EnergieBelastingGasM3))
+	//log.Printf("sending value easyenergy.energiebelasgingsgas=%f", h.easyEnergy.Tarief.EnergieBelastingGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.opslagduurzameenergiesgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3))
+	//log.Printf("sending value easyenergy.opslagduurzameenergiesgas=%f", h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.btwgas", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwGas))
+	//log.Printf("sending value easyenergy.btwgas=%f", h.easyEnergy.Tarief.BtwGas)
 
-	h.statsd.Gauge(1.0, "easyenergy.totalprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.TotalPrijsStroomKwh))
-	log.Printf("sending value easyenergy.totalprijsstroomkwh=%f", h.easyEnergy.Tarief.TotalPrijsStroomKwh)
-	h.statsd.Gauge(1.0, "easyenergy.totalprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.TotalPrijsGasM3))
-	log.Printf("sending value easyenergy.totalprijsgasm3=%f", h.easyEnergy.Tarief.TotalPrijsGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.totalprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.TotalPrijsStroomKwh))
+	//log.Printf("sending value easyenergy.totalprijsstroomkwh=%f", h.easyEnergy.Tarief.TotalPrijsStroomKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.totalprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.TotalPrijsGasM3))
+	//log.Printf("sending value easyenergy.totalprijsgasm3=%f", h.easyEnergy.Tarief.TotalPrijsGasM3)
 
-	h.statsd.Gauge(1.0, "easyenergy.btwprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwPrijsStroomKwh))
-	log.Printf("sending value easyenergy.btwprijsstroomkwh=%f", h.easyEnergy.Tarief.BtwPrijsStroomKwh)
-	h.statsd.Gauge(1.0, "easyenergy.btwprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwPrijsGasM3))
-	log.Printf("sending value easyenergy.btwprijsgasm3=%f", h.easyEnergy.Tarief.BtwPrijsGasM3)
+	//h.statsd.Gauge(1.0, "easyenergy.btwprijsstroomkwh", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwPrijsStroomKwh))
+	//log.Printf("sending value easyenergy.btwprijsstroomkwh=%f", h.easyEnergy.Tarief.BtwPrijsStroomKwh)
+	//h.statsd.Gauge(1.0, "easyenergy.btwprijsgasm3", fmt.Sprintf("%f", h.easyEnergy.Tarief.BtwPrijsGasM3))
+	//log.Printf("sending value easyenergy.btwprijsgasm3=%f", h.easyEnergy.Tarief.BtwPrijsGasM3)
+
+	tags := map[string]string{
+		"source": "easyenergy",
+	}
+	fields := map[string]interface{}{
+		"spotprijsstroomkwh": h.easyEnergy.Tarief.SpotPrijsStroomKwh,
+
+		"spotprijsstroomterugkwh":        h.easyEnergy.Tarief.SpotPrijsStroomTerugKwh,
+		"opslageasyenergyprijsstroomkwh": h.easyEnergy.Tarief.OpslagEasyEnergyPrijsStroomKwh,
+		"vergroeningprijsstroomkwh":      h.easyEnergy.Tarief.VergroeningPrijsStroomKwh,
+
+		// overheid
+		"energiebelastingstroomkwh":      h.easyEnergy.Tarief.EnergieBelastingStroomKwh,
+		"opslagduurzameenergiestroomkwh": h.easyEnergy.Tarief.OpslagDuurzameEnergieStroomKwh,
+		"btwstroom":                      h.easyEnergy.Tarief.BtwStroom,
+
+		// levernacier
+		"spotprijsgasm3":             h.easyEnergy.Tarief.SpotPrijsGasM3,
+		"spotprijsgasterugm3":        h.easyEnergy.Tarief.SpotPrijsGasTerugM3,
+		"opslageasyenergyprijsgasm3": h.easyEnergy.Tarief.OpslagEasyEnergyPrijsGasM3,
+
+		// overheid
+		"opslagregioprijsgasm3":      h.easyEnergy.Tarief.OpslagRegioPrijsGasM3,
+		"energiebelastinggasm3":      h.easyEnergy.Tarief.EnergieBelastingGasM3,
+		"opslagduurzameenergiegasm3": h.easyEnergy.Tarief.OpslagDuurzameEnergieGasM3,
+		"btwgas":                     h.easyEnergy.Tarief.BtwGas,
+		"totalprijsstroomkwh":        h.easyEnergy.Tarief.TotalPrijsStroomKwh,
+		"totalprijsgasm3":            h.easyEnergy.Tarief.TotalPrijsGasM3,
+		"btwprijsstroomkwh":          h.easyEnergy.Tarief.BtwPrijsStroomKwh,
+		"btwprijsgasm3":              h.easyEnergy.Tarief.BtwPrijsGasM3,
+	}
+	log.Printf("sending fields: %+v\n", fields)
+	err := h.influxdb.Insert("easyenergy", tags, fields)
+	if err != nil {
+		log.Printf(err.Error())
+	}
+	log.Printf("fields posted")
 
 }
 
 func main() {
 
 	h := Handler{
-		statsd: statsdhelper.New(),
+		influxdb: influxdbhelper.New("telegraf"),
+		//statsd: statsdhelper.New(),
 		easyEnergy: &EasyEnergy{
 			Tarief: EasyEnergyTarief{},
 		},
@@ -301,8 +347,10 @@ func main() {
 			log.Printf("Program killed by signal!")
 			return
 		case <-getTicker.C:
+			log.Printf("get ticker")
 			h.get()
 		case <-putTicker.C:
+			log.Printf("put ticker")
 			h.put()
 		}
 	}
